@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Fix Cost Dashboard 2026 – Boiler &amp; Glue (Target vs Actual)</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>tailwind.config={theme:{extend:{fontFamily:{sans:['Prompt','sans-serif']},colors:{brand:{500:'#0284c7',600:'#0284c7',700:'#0369a1',900:'#0c4a6e'}}}}}</script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{font-family:'Prompt',sans-serif;background:#f8fafc;color:#1e293b}
+th{cursor:pointer;user-select:none}
+@media print{.np{display:none!important}body{background:#fff}}
+</style></head>
+<body class="antialiased min-h-screen flex flex-col">
+<header class="bg-gradient-to-r from-slate-900 via-slate-800 to-brand-900 text-white shadow-lg np">
+<div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+<div class="flex items-center gap-3"><div class="p-2.5 bg-sky-500/20 rounded-xl border border-sky-400/30 text-2xl">📈</div>
+<div><h1 class="text-xl md:text-2xl font-bold tracking-tight" id="ttl">Fix Cost Dashboard</h1><p class="text-xs md:text-sm text-slate-300">รายงานเปรียบเทียบต้นทุนคงที่ Target vs Actual (ปี 2026)</p></div></div>
+<div class="flex flex-wrap items-center justify-center gap-2">
+<input type="file" id="file" accept=".xlsx,.xls,.xlsm" multiple hidden>
+<button onclick="file.click()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs md:text-sm font-medium rounded-xl shadow-md">⬆ อัปโหลดไฟล์ Excel</button>
+<button onclick="exportCSV()" class="px-3.5 py-2 bg-slate-700/80 hover:bg-slate-700 text-white text-xs md:text-sm font-medium rounded-xl border border-slate-600">Export CSV</button>
+<button onclick="window.print()" class="px-3.5 py-2 bg-brand-600 hover:bg-sky-500 text-white text-xs md:text-sm font-medium rounded-xl shadow-md">Print / Save PDF</button>
+</div></div></header>
+
+<main class="flex-grow max-w-7xl w-full mx-auto px-4 py-6 space-y-6">
+<section class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 np">
+<div class="flex flex-col lg:flex-row justify-between lg:items-end gap-4">
+<div class="flex flex-wrap items-end gap-3">
+<div><label class="block text-xs font-semibold text-slate-500 mb-1">แผนก (Department)</label><div id="depts" class="flex gap-1.5 flex-wrap"></div></div>
+<div><label class="block text-xs font-semibold text-slate-500 mb-1">ช่วงเวลา / เดือน</label>
+<select id="mf" class="w-full sm:w-52 bg-slate-50 border border-slate-300 text-sm rounded-xl p-2.5 font-medium"></select></div>
+<div><label class="block text-xs font-semibold text-slate-500 mb-1">หมวดหมู่ต้นทุน (Category)</label>
+<select id="cf" class="w-full sm:w-64 bg-slate-50 border border-slate-300 text-sm rounded-xl p-2.5 font-medium">
+<option value="C3">C3: รวมต้นทุนคงที่ทั้งหมด (Total Fix Cost)</option><option value="C1">C1: ค่าแรง &amp; เงินเดือน</option><option value="C2">C2: ค่าใช้จ่ายดำเนินงานอื่น</option></select></div></div>
+<div class="flex items-center gap-2 text-xs bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-200"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span id="src" class="text-slate-600 font-medium"></span></div>
+</div></section>
+
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><div class="text-sm font-medium text-slate-500">Target (งบประมาณ)</div><div id="kT" class="text-2xl font-bold mt-2"></div><div class="text-xs text-slate-400 mt-1">บาท · <span id="kTs"></span></div></div>
+<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><div class="text-sm font-medium text-slate-500">Actual (เกิดขึ้นจริง)</div><div id="kA" class="text-2xl font-bold mt-2 text-brand-700"></div><div class="text-xs text-slate-400 mt-1">บาท · <span id="kAs"></span></div></div>
+<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><div class="text-sm font-medium text-slate-500">Variance (ผลต่าง)</div><div id="kD" class="text-2xl font-bold mt-2"></div><div class="text-xs mt-1"><b id="kP"></b> <span class="text-slate-400">จากงบประมาณ</span></div></div>
+<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><div class="text-sm font-medium text-slate-500">Status (สถานะคุมงบ)</div><div class="mt-2"><span id="kB" class="inline-block px-3 py-1.5 rounded-full text-xs font-semibold"></span></div><p id="kBd" class="text-xs text-slate-500 mt-2"></p></div>
+</section>
+
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+<div class="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><h3 class="font-semibold">เปรียบเทียบ Target vs Actual รายเดือน</h3><p class="text-xs text-slate-500 mb-3">หน่วย: บาท (THB)</p><div class="relative h-72"><canvas id="c1"></canvas></div></div>
+<div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200"><h3 class="font-semibold">สัดส่วนต้นทุน Actual (C1 vs C2)</h3><p class="text-xs text-slate-500 mb-3">ค่าแรง/เงินเดือน เทียบ ค่าใช้จ่ายดำเนินงาน</p><div class="relative h-52"><canvas id="c2"></canvas></div>
+<div class="mt-3 text-sm space-y-1"><div class="flex justify-between"><span>C1 ค่าแรง/เงินเดือน</span><b id="s1"></b></div><div class="flex justify-between"><span>C2 คชจ. ดำเนินงาน</span><b id="s2"></b></div></div></div>
+</section>
+
+<section class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+<h3 class="font-semibold mb-1">🔍 ผลวิเคราะห์จากข้อมูล</h3><p class="text-xs text-slate-500 mb-3">คำนวณอัตโนมัติจากไฟล์ที่โหลด ตามตัวกรองที่เลือก (เฉพาะเดือนที่มี Actual)</p>
+<ul id="ins" class="text-sm space-y-1.5 list-disc pl-5 mb-4"></ul>
+<div class="grid md:grid-cols-2 gap-4"><div><div class="text-xs font-semibold text-rose-600 mb-1">รายการที่เกินงบมากที่สุด (Top 5)</div><div id="topO"></div></div><div><div class="text-xs font-semibold text-emerald-600 mb-1">รายการที่ต่ำกว่างบมากที่สุด (Top 5)</div><div id="topU"></div></div></div>
+</section>
+
+<section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+<div class="p-5 border-b border-slate-200"><h3 class="font-semibold">ตารางรายละเอียดรายเดือน</h3><p class="text-xs text-slate-500">คลิกที่แถวเพื่อดูรายการย่อย (Sub-items) · คลิกหัวคอลัมน์เพื่อเรียงลำดับ</p></div>
+<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="bg-slate-50 text-slate-600"><tr>
+<th class="py-3 px-4 text-left" onclick="srt('id')">เดือน</th><th class="py-3 px-4 text-right" onclick="srt('T')">Target (บาท)</th><th class="py-3 px-4 text-right" onclick="srt('A')">Actual (บาท)</th><th class="py-3 px-4 text-right" onclick="srt('D')">Variance (บาท)</th><th class="py-3 px-4 text-right" onclick="srt('P')">% Diff</th><th class="py-3 px-4 text-center">สถานะ</th></tr></thead>
+<tbody id="tb" class="divide-y divide-slate-100"></tbody><tfoot id="tf" class="bg-slate-50 border-t-2 border-slate-200"></tfoot></table></div></section>
+</main>
+
+<div id="md" class="hidden fixed inset-0 z-50 bg-slate-900/60 items-center justify-center p-4 np" onclick="if(event.target===this)cm()">
+<div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+<div class="p-5 border-b border-slate-200 flex justify-between items-start"><div><h3 class="font-semibold">รายละเอียดรายการย่อย (Sub-items)</h3><p id="mt" class="text-xs text-slate-500"></p></div><button onclick="cm()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">✕</button></div>
+<div class="p-5 overflow-y-auto"><div id="mc" class="grid grid-cols-2 gap-3 mb-4"></div><div id="ml"></div></div></div></div>
+<footer class="text-center text-xs text-slate-400 py-6 np">Fix Cost Management Dashboard © 2026 · อัปโหลดไฟล์ Excel เพื่ออัปเดตข้อมูล</footer>
+
+<script>
+const MN=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'],MS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+//<parse>
+function parseSheet(ws){
+ if(!ws||!ws['!ref'])return null;
+ const R=XLSX.utils.decode_range(ws['!ref']),g=(r,c)=>ws[XLSX.utils.encode_cell({r:r,c:c})];
+ const num=(r,c)=>{const x=g(r,c);return x&&x.t==='n'?x.v:0},str=(r,c)=>{const x=g(r,c);return x&&x.t==='s'?String(x.v).trim():''};
+ const N=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'],st=[];let h=-1;
+ for(let r=0;r<Math.min(8,R.e.r+1);r++)for(let c=0;c<=R.e.c;c++){const i=N.indexOf(str(r,c).toUpperCase());if(i>=0){st[i]=c;h=r}}
+ if(h<0)return null;
+ const q=x=>Math.round(x*100)/100,out=[];let on=false,cat='C1';
+ for(let r=h+1;r<=R.e.r;r++){
+  const a=g(r,0),code=a&&a.t==='n'?String(a.v):'',n=str(r,1)||str(r,0);if(!n)continue;
+  const k=n.replace(/\s/g,'');
+  if(k==='ค่าใช้จ่ายในการผลิต'){on=true;cat='C1';continue}
+  if(!on)continue;
+  const t=[],ac=[];let nz=0;
+  for(let m=0;m<12;m++){const c=st[m];t.push(c==null?0:q(num(r,c+2)));ac.push(c==null?0:q(num(r,c+7)));nz+=Math.abs(t[m])+Math.abs(ac[m])}
+  const tm=/^C([123])/.exec(k);
+  if(nz)out.push({i:r,c:code,n:n,cat:tm?'C'+tm[1]:cat,tt:tm?'C'+tm[1]:'',t:t,a:ac});
+  if(k.startsWith('C1'))cat='C2';
+  if(k.startsWith('C3'))break;
+ }
+ return out;
+}
+//</parse>
+let DATA={"BOILER":{"file":"เว็บ ก2.xlsx","rows":[{"i":87,"c":"610100000","n":"เงินเดือน","cat":"C1","tt":"","t":[136740,136740,136740,136740,136740,136740,139570,139570,139570,139570,139570,139570],"a":[136740,136120,136740,136740,136740,136740,139570,139262,138293,0,0,0]},{"i":90,"c":"610400000","n":"ค่าสวัสดิการ (เงินเดือน)","cat":"C1","tt":"","t":[17300,17300,17300,17300,17300,17300,17300,17300,17300,17300,17300,17300],"a":[11030,20859,17180,32090,16120,16460,16720,14760,17770,0,0,0]},{"i":94,"c":"610900000","n":"ประกันสังคม","cat":"C1","tt":"","t":[5183,5183,5183,5183,5183,5183,5183,5183,5183,5183,5183,5183],"a":[5165,5178,5178,5177,5190,5177,5202,5197,5182,0,0,0]},{"i":95,"c":"611000000","n":"ค่าเงินสมทบกองทุนสงเคราะห์ลูกจ้าง","cat":"C1","tt":"","t":[0,0,0,0,0,0,0,0,0,349,349,349],"a":[0,0,0,0,0,0,0,0,0,0,0,0]},{"i":96,"c":"","n":"C1 รวม  ค่าแรง","cat":"C1","tt":"C1","t":[159223,159223,159223,159223,159223,159223,162053,162053,162053,162402,162402,162402],"a":[152935,162157,159098,174007,158050,158377,161492,159219,161245,0,0,0]},{"i":110,"c":"640400000","n":"ค่าซ่อมแซม - รถ","cat":"C2","tt":"","t":[3000,2000,14000,1500,0,3000,3000,15000,2000,3000,15000,1000],"a":[0,1300,7610,0,0,0,0,8890,920,0,0,0]},{"i":111,"c":"640400100","n":"ค่าซ่อมแซม - รถโฟล์คลิฟ","cat":"C2","tt":"","t":[0,0,0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,293.33,0,629.29,0,0,0,0]},{"i":117,"c":"640640000","n":"ค่าซ่อมแซม-คอมพิวเตอร์","cat":"C2","tt":"","t":[0,0,0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,0,13000,0,0,0,0]},{"i":133,"c":"680200000","n":"ค่าเครื่องเขียนและวัสดุสำนักงาน","cat":"C2","tt":"","t":[200,200,200,200,200,200,200,200,200,200,200,200],"a":[36.23,91.7,991.6,129.85,96,34.6,40.5,20.17,37.6,0,0,0]},{"i":134,"c":"680300000","n":"ค่าเครื่องมือซ่อมบำรุง","cat":"C2","tt":"","t":[0,0,2000,0,1000,0,0,0,1000,0,0,0],"a":[0,0,0,0,0,0,0,0,0,0,0,0]},{"i":145,"c":"681400000","n":"ค่าธรรมเนียมอื่นๆ","cat":"C2","tt":"","t":[0,0,30000,100000,0,0,0,0,0,30000,0,50000],"a":[40000,0,0,95000,17700,0,0,0,0,0,0,0]},{"i":182,"c":"","n":"C2 รวม ค่าใช้จาย","cat":"C2","tt":"C2","t":[3200,2200,46200,101700,1200,3200,3200,15200,3200,33200,15200,51200],"a":[40036.23,1391.7,8601.6,95129.85,17796,327.93,40.5,22539.46,957.6,0,0,0]},{"i":183,"c":"","n":"C3 รวม คชจในการผลิต","cat":"C3","tt":"C3","t":[162423,161423,205423,260923,160423,162423,165253,177253,165253,195602,177602,213602],"a":[192971.23,163548.7,167699.6,269136.85,175846,158704.93,161532.5,181758.46,162202.6,0,0,0]}]},"GLUE":{"file":"เว็บ ก3.xlsx","rows":[{"i":87,"c":"610100000","n":"เงินเดือน","cat":"C1","tt":"","t":[50670,50670,50670,50670,50670,50670,52600,52600,52600,52600,52600,52600],"a":[50670,50670,50670,50670,50670,50670,52600,52600,52600,0,0,0]},{"i":90,"c":"610400000","n":"ค่าสวัสดิการ (เงินเดือน)","cat":"C1","tt":"","t":[9800,9800,9800,9800,9800,9800,9800,9800,9800,9800,9800,9800],"a":[5500,10058,9650,11500,9530,9470,9530,9350,7500,0,0,0]},{"i":94,"c":"610900000","n":"ประกันสังคม","cat":"C1","tt":"","t":[2824,2824,2824,2824,2824,2824,2832,2832,2832,2832,2832,2832],"a":[2809,2802,2817,2809,2812,2809,2908,2898,2907,0,0,0]},{"i":95,"c":"611000000","n":"ค่าเงินสมทบกองทุนสงเคราะห์ลูกจ้าง","cat":"C1","tt":"","t":[0,0,0,0,0,0,0,0,0,132,132,132],"a":[0,0,0,0,0,0,0,0,0,0,0,0]},{"i":96,"c":"","n":"C1 รวม  ค่าแรง","cat":"C1","tt":"C1","t":[63294,63294,63294,63294,63294,63294,65232,65232,65232,65364,65364,65364],"a":[58979,63530,63137,64979,63012,62949,65038,64848,63007,0,0,0]},{"i":133,"c":"680200000","n":"ค่าเครื่องเขียนและวัสดุสำนักงาน","cat":"C2","tt":"","t":[300,300,300,300,300,300,300,300,300,300,300,300],"a":[142.9,91.85,82,98.25,64,51.7,0,181.25,0,0,0,0]},{"i":174,"c":"688000000","n":"ค่าสอบเทียบเครื่องมือ","cat":"C2","tt":"","t":[0,0,0,0,0,0,0,0,0,0,0,0],"a":[0,0,0,0,0,0,3500,0,0,0,0,0]},{"i":182,"c":"","n":"C2 รวม ค่าใช้จาย","cat":"C2","tt":"C2","t":[300,300,300,300,300,300,300,300,300,300,300,300],"a":[142.9,91.85,82,98.25,64,51.7,3500,181.25,0,0,0,0]},{"i":183,"c":"","n":"C3 รวม คชจในการผลิต","cat":"C3","tt":"C3","t":[63594,63594,63594,63594,63594,63594,65532,65532,65532,65664,65664,65664],"a":[59121.9,63621.85,63219,65077.25,63076,63000.7,68538,65029.25,63007,0,0,0]}]}};
+const S={d:new Set(Object.keys(DATA)),m:'ytd',c:'C3',sk:'id',sd:1,cur:null},$=id=>document.getElementById(id);
+const f2=n=>n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),sg=n=>(n>0?'+':'')+f2(n),esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const Z=()=>Array(12).fill(0);
+function merge(){const mp=new Map();[...S.d].forEach(d=>DATA[d].rows.forEach(r=>{const k=r.cat+'|'+r.c+'|'+r.n;let o=mp.get(k);if(!o){o={i:r.i,c:r.c,n:r.n,cat:r.cat,tt:r.tt,t:Z(),a:Z()};mp.set(k,o)}for(let m=0;m<12;m++){o.t[m]+=r.t[m];o.a[m]+=r.a[m]}}));return[...mp.values()].sort((x,y)=>x.i-y.i)}
+function months(rows){
+ const it=rows.filter(r=>!r.tt),tot=x=>rows.find(r=>r.tt===x),sum=(a,k,m)=>a.reduce((s,r)=>s+r[k][m],0);
+ const c1=it.filter(r=>r.cat==='C1'),c2=it.filter(r=>r.cat==='C2'),T1=tot('C1'),T2=tot('C2'),T3=tot('C3');
+ return MN.map((n,m)=>{const o={id:m,name:n,q:Math.floor(m/3)+1,
+  c1t:T1?T1.t[m]:sum(c1,'t',m),c1a:T1?T1.a[m]:sum(c1,'a',m),c2t:T2?T2.t[m]:sum(c2,'t',m),c2a:T2?T2.a[m]:sum(c2,'a',m)};
+  o.c3t=T3?T3.t[m]:o.c1t+o.c2t;o.c3a=T3?T3.a[m]:o.c1a+o.c2a;o.has=o.c3a!==0||o.c1a!==0;return o})}
+function pick(ms){const mf=S.m;return ms.filter(x=>mf==='ytd'?x.has:mf==='all'?true:mf[0]==='q'?x.q===+mf[1]:x.id===+mf-1)}
+function stat(p){return Math.abs(p)<=2?['ตามแผน (On Track)','bg-emerald-50 text-emerald-700 border-emerald-200']:p>2?['เกินเป้า (Over Target)','bg-rose-50 text-rose-700 border-rose-200']:['ประหยัด (Under Target)','bg-blue-50 text-blue-700 border-blue-200']}
+let CH={};
+function mk(id,cfg){if(CH[id])CH[id].destroy();CH[id]=new Chart($(id),cfg)}
+function upd(){
+ const rows=merge(),all=months(rows),ym=all.filter(x=>x.has),sel=pick(all),k=S.c.toLowerCase();
+ const pd=sel.map(x=>{const T=x[k+'t'],A=x[k+'a'],D=A-T;return{...x,T:T,A:A,D:D,P:T>0?D/T*100:0}});
+ const w=pd.filter(x=>x.has),tT=w.reduce((s,x)=>s+x.T,0),tA=w.reduce((s,x)=>s+x.A,0),tD=tA-tT,tP=tT>0?tD/tT*100:0,fullT=pd.reduce((s,x)=>s+x.T,0);
+ $('ttl').textContent=[...S.d].join(' & ')+' Fix Cost Dashboard';
+ $('src').textContent='ข้อมูล: '+Object.entries(DATA).map(([d,v])=>d+' ← '+v.file).join(' · ')+(ym.length?` (Actual ${MS[ym[0].id]} – ${MS[ym[ym.length-1].id]})`:'');
+ $('kT').textContent=f2(tT);$('kTs').textContent=w.length+' เดือนที่มี Actual'+(fullT!==tT?' (Target ทั้งช่วง '+f2(fullT)+')':'');
+ $('kA').textContent=f2(tA);$('kAs').textContent='ใช้งานจริง';
+ const bad=tD>0;$('kD').textContent=sg(tD);$('kD').className='text-2xl font-bold mt-2 '+(bad?'text-rose-600':'text-emerald-600');$('kP').textContent=sg(tP).replace(/(\.\d\d)\d*$/,'$1')+'%';$('kP').className=bad?'text-rose-600':'text-emerald-600';
+ const b=$('kB'),bd=$('kBd');
+ if(!w.length){b.className='inline-block px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600';b.textContent='รอข้อมูล';bd.textContent='ไม่มี Actual ในช่วงที่เลือก'}
+ else if(Math.abs(tP)<=2){b.className='inline-block px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800';b.textContent='✔ ควบคุมงบได้ดีเยี่ยม';bd.textContent='ใกล้เคียงเป้าหมาย (ผลต่าง '+tP.toFixed(2)+'%)'}
+ else if(tP>2){b.className='inline-block px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800';b.textContent='⚠ เกินงบประมาณตั้งไว้';bd.textContent='สูงกว่างบ '+tP.toFixed(2)+'% ควรเฝ้าระวัง'}
+ else{b.className='inline-block px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800';b.textContent='ต่ำกว่างบประมาณ';bd.textContent='ประหยัดกว่าเป้าหมาย '+Math.abs(tP).toFixed(2)+'%'}
+ mk('c1',{type:'bar',data:{labels:pd.map(x=>MS[x.id]),datasets:[{label:'Target',data:pd.map(x=>x.T),backgroundColor:'#cbd5e1',borderRadius:4},{label:'Actual',data:pd.map(x=>x.has?x.A:null),backgroundColor:'#0284c7',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:c=>c.dataset.label+': '+f2(c.parsed.y)}}},scales:{y:{ticks:{callback:v=>v>=1e3?(v/1e3)+'K':v}}}}});
+ const a1=pick(all).filter(x=>x.has).reduce((s,x)=>s+x.c1a,0),a2=pick(all).filter(x=>x.has).reduce((s,x)=>s+x.c2a,0),at=a1+a2||1;
+ $('s1').textContent=(a1/at*100).toFixed(1)+'% · '+f2(a1);$('s2').textContent=(a2/at*100).toFixed(1)+'% · '+f2(a2);
+ mk('c2',{type:'doughnut',data:{labels:['C1 ค่าแรง','C2 ดำเนินงาน'],datasets:[{data:[a1,a2],backgroundColor:['#0284c7','#f59e0b'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom'}}}});
+ // insights
+ const ids=new Set(w.map(x=>x.id)),items=rows.filter(r=>!r.tt&&(S.c==='C3'||r.cat===S.c)).map(r=>{const t=[...ids].reduce((s,m)=>s+r.t[m],0),a=[...ids].reduce((s,m)=>s+r.a[m],0);return{n:r.n,c:r.c,t:t,a:a,d:a-t}}).filter(r=>r.t||r.a);
+ const over=items.filter(r=>r.d>0).sort((x,y)=>y.d-x.d),under=items.filter(r=>r.d<0).sort((x,y)=>x.d-y.d),ov=w.filter(x=>x.D>0),mx=[...w].sort((x,y)=>y.D-x.D)[0],mn=[...w].sort((x,y)=>x.D-y.D)[0],ins=[];
+ if(w.length){ins.push(`เกินงบ <b>${ov.length}</b> จาก ${w.length} เดือน · รวม Actual ${f2(tA)} บาท เทียบ Target ${f2(tT)} บาท (<b class="${bad?'text-rose-600':'text-emerald-600'}">${sg(tD)} บาท / ${tP.toFixed(2)}%</b>)`);
+  if(mx&&mx.D>0)ins.push(`เดือนที่เกินงบมากที่สุด: <b>${mx.name}</b> (${sg(mx.D)} บาท, ${mx.P.toFixed(1)}%)`);
+  if(mn&&mn.D<0)ins.push(`เดือนที่ประหยัดที่สุด: <b>${mn.name}</b> (${sg(mn.D)} บาท, ${mn.P.toFixed(1)}%)`);
+  if(over[0])ins.push(`รายการที่ดันต้นทุนเกินงบมากสุด: <b>${esc(over[0].n)}</b> (${sg(over[0].d)} บาท) คิดเป็น ${tD>0?Math.round(over[0].d/tD*100)+'% ของผลต่างรวม':'ส่วนเกินเฉพาะรายการ'}`);
+  if(w.length>=4){const h=Math.floor(w.length/2),av=a=>a.reduce((s,x)=>s+x.A,0)/a.length,e=av(w.slice(0,h)),l=av(w.slice(-h));ins.push(`แนวโน้ม: ค่าเฉลี่ยรายเดือนช่วงหลัง ${f2(l)} บาท ${l>e?'สูงกว่า':'ต่ำกว่า'}ช่วงแรก ${f2(e)} บาท (${((l-e)/(e||1)*100).toFixed(1)}%)`)}
+ }else ins.push('ไม่มีข้อมูล Actual ในช่วงที่เลือก');
+ $('ins').innerHTML=ins.map(x=>'<li>'+x+'</li>').join('');
+ const tl=(a,c)=>a.length?'<table class="w-full text-xs">'+a.slice(0,5).map(r=>`<tr class="border-b border-slate-100"><td class="py-1.5 pr-2">${esc(r.n)}</td><td class="py-1.5 text-right ${c} font-medium whitespace-nowrap">${sg(r.d)}</td></tr>`).join('')+'</table>':'<div class="text-xs text-slate-400">ไม่มี</div>';
+ $('topO').innerHTML=tl(over,'text-rose-600');$('topU').innerHTML=tl(under,'text-emerald-600');
+ // table
+ const dir=S.sd;pd.sort((x,y)=>(x[S.sk]-y[S.sk])*dir);
+ $('tb').innerHTML=pd.map(x=>{const s=x.has?stat(x.P):['รอข้อมูล','bg-slate-100 text-slate-500 border-slate-200'],c=x.D>0?'text-rose-600':x.D<0?'text-emerald-600':'';
+  return`<tr class="hover:bg-slate-50 cursor-pointer" onclick="om(${x.id})"><td class="py-3 px-4 font-medium">${x.name} ›</td><td class="py-3 px-4 text-right">${f2(x.T)}</td><td class="py-3 px-4 text-right font-medium">${x.has?f2(x.A):'-'}</td><td class="py-3 px-4 text-right font-medium ${c}">${x.has?sg(x.D):'-'}</td><td class="py-3 px-4 text-right font-medium ${c}">${x.has?sg(x.P).replace(/(\.\d\d)\d*$/,'$1')+'%':'-'}</td><td class="py-3 px-4 text-center"><span class="inline-block px-2.5 py-1 text-xs border rounded-md ${s[1]}">${s[0]}</span></td></tr>`}).join('');
+ const tc=bad?'text-rose-600':'text-emerald-600';
+ $('tf').innerHTML=`<tr class="font-bold"><td class="py-3 px-4">รวม (เฉพาะเดือนที่มี Actual)</td><td class="py-3 px-4 text-right">${f2(tT)}</td><td class="py-3 px-4 text-right text-brand-700">${f2(tA)}</td><td class="py-3 px-4 text-right ${tc}">${sg(tD)}</td><td class="py-3 px-4 text-right ${tc}">${tP.toFixed(2)}%</td><td></td></tr>`;
+ S.view=pd;S.all=all;S.rows=rows;
+}
+function srt(k){S.sd=S.sk===k?-S.sd:1;S.sk=k;upd()}
+function om(m){const x=S.all[m],rows=S.rows.filter(r=>!r.tt&&(r.t[m]||r.a[m]));
+ $('mt').textContent='ประจำเดือน'+x.name+' 2026 · '+[...S.d].join(' + ');
+ const cd=(l,a,t)=>`<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><div class="text-xs text-slate-500">${l}</div><div class="font-bold text-lg">${f2(a)}</div><div class="text-xs text-slate-400">Target: ${f2(t)}</div></div>`;
+ $('mc').innerHTML=cd('C1 ค่าแรง/เงินเดือน (Actual)',x.c1a,x.c1t)+cd('C2 คชจ. ดำเนินงาน (Actual)',x.c2a,x.c2t);
+ $('ml').innerHTML='<table class="w-full text-sm"><thead class="bg-slate-50 text-slate-600"><tr><th class="p-2 text-left">หมวด</th><th class="p-2 text-left">รายการ</th><th class="p-2 text-right">Target</th><th class="p-2 text-right">Actual</th></tr></thead><tbody>'+(rows.map(r=>`<tr class="border-b border-slate-100"><td class="p-2 text-xs font-semibold ${r.cat==='C1'?'text-sky-700':'text-amber-600'}">${r.cat}</td><td class="p-2">${esc(r.n)}</td><td class="p-2 text-right text-slate-500">${f2(r.t[m])}</td><td class="p-2 text-right font-medium">${f2(r.a[m])}</td></tr>`).join('')||'<tr><td colspan=4 class="p-3 text-slate-400">ไม่มีรายการ</td></tr>')+'</tbody></table>';
+ $('md').classList.remove('hidden');$('md').classList.add('flex')}
+function cm(){$('md').classList.add('hidden');$('md').classList.remove('flex')}
+function exportCSV(){const l=[['เดือน','Target','Actual','Variance','%Diff']].concat(S.view.map(x=>[x.name,x.T,x.has?x.A:'',x.has?x.D:'',x.has?x.P.toFixed(2):'']));
+ const b=new Blob(['\ufeff'+l.map(r=>r.join(',')).join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='fix_cost_'+S.c+'.csv';a.click()}
+function ui(){
+ $('depts').innerHTML=Object.keys(DATA).map(d=>`<button data-d="${esc(d)}" class="px-3.5 py-2 text-sm rounded-xl border font-medium ${S.d.has(d)?'bg-brand-600 text-white border-sky-600':'bg-slate-50 text-slate-600 border-slate-300'}">${esc(d)}</button>`).join('');
+ document.querySelectorAll('#depts button').forEach(b=>b.onclick=()=>{const d=b.dataset.d;if(S.d.has(d)&&S.d.size>1)S.d.delete(d);else S.d.add(d);ui();upd()})}
+const ex=(v,l)=>`<option value="${v}">${l}</option>`;
+$('mf').innerHTML=ex('ytd','YTD (เดือนที่มี Actual)')+ex('all','ทั้งปี 2026 (ม.ค. - ธ.ค.)')+[1,2,3,4].map(q=>ex('q'+q,'ไตรมาส '+q)).join('')+'<option disabled>──────────</option>'+MN.map((n,i)=>ex(i+1,n)).join('');
+$('mf').onchange=e=>{S.m=e.target.value;upd()};$('cf').onchange=e=>{S.c=e.target.value;upd()};
+$('file').onchange=async e=>{
+ if(typeof XLSX==='undefined'){alert('โหลดตัวอ่าน Excel ไม่ได้ (ต้องต่ออินเทอร์เน็ต)');return}
+ let n=0;
+ for(const f of e.target.files){try{const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});wb.SheetNames.forEach(sn=>{const r=parseSheet(wb.Sheets[sn]);if(r&&r.some(x=>x.tt)){DATA[sn.toUpperCase()]={file:f.name,rows:r};n++}})}catch(x){console.error(x)}}
+ e.target.value='';if(!n){alert('ไม่พบข้อมูลรูปแบบ Fix Cost (หมวด C1/C2/C3) ในไฟล์ที่เลือก');return}
+ S.d=new Set(Object.keys(DATA));ui();upd()};
+ui();upd();
+</script></body></html>
